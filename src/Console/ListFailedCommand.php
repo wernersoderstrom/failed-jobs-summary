@@ -40,7 +40,7 @@ class ListFailedCommand extends FrameworkListFailedCommand
         // getFailedJobs() already applies --queue on Laravel versions that have it.
         $summary = $this->summarizeFailedJobs($this->getFailedJobs());
 
-        if ($this->hasOption('json') && $this->option('json')) {
+        if ($this->getDefinition()->hasOption('json') && $this->option('json')) {
             $this->output->writeln($summary->toJson());
 
             return self::SUCCESS;
