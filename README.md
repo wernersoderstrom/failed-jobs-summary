@@ -66,7 +66,7 @@ php artisan queue:failed --summary --json
 ]
 ```
 
-Laravel 11 and 12, and early Laravel 13 releases, don't have these options on `queue:failed`, so there `--summary` always summarizes every queue as a table. Run `php artisan queue:failed --help` to see which options your version has.
+Laravel 12 and early Laravel 13 releases don't have these options on `queue:failed`, so there `--summary` always summarizes every queue as a table. Run `php artisan queue:failed --help` to see which options your version has.
 
 Without `--summary`, `queue:failed` works exactly as before.
 

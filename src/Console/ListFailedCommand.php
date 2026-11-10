@@ -14,8 +14,8 @@ class ListFailedCommand extends FrameworkListFailedCommand
     {
         parent::__construct();
 
-        // Added here rather than in a signature, because the framework defines
-        // queue:failed with $name on Laravel 11 and 12 but with $signature on 13.
+        // Added here rather than in a signature, because depending on the Laravel
+        // version the framework defines queue:failed with $name or with $signature.
         $this->addOption(
             'summary',
             null,
