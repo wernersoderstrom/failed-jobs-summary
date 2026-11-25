@@ -23,11 +23,40 @@ jobs:
         with:
           ref: main
 
-      - name: Update Changelog
-        uses: stefanzweifel/changelog-updater-action@f7c43fed0c8760b25199be6eae5c28fc22830ec6 # v1.13.3
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
-          latest-version: ${{ github.event.release.name }}
-          release-notes: ${{ github.event.release.body }}
+          php-version: '8.5'
+          coverage: none
+          tools: none
+
+      # Runs the changelog-updater phar from stefanzweifel/changelog-updater-action
+      # v1.13.3 directly, instead of through the action's Docker image, which is
+      # built from a mutable php:8.5-cli-alpine tag. The file is pinned to the
+      # action's commit and verified by checksum.
+      - name: Download changelog-updater
+        env:
+          URL: https://raw.githubusercontent.com/stefanzweifel/changelog-updater-action/f7c43fed0c8760b25199be6eae5c28fc22830ec6/changelog-updater
+          SHA256: 993de72375a723a7a88bb327d9b2d8fc5cb5da0a0cdae2286c93133468d5d133
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/changelog-updater" "$URL"
+          echo "$SHA256  $RUNNER_TEMP/changelog-updater" | sha256sum -c -
+
+      - name: Update Changelog
+        env:
+          RELEASE_NOTES: ${{ github.event.release.body }}
+          LATEST_VERSION: ${{ github.event.release.name }}
+        run: |
+          php "$RUNNER_TEMP/changelog-updater" update \
+            --release-notes="$RELEASE_NOTES" \
+            --latest-version="$LATEST_VERSION" \
+            --release-date="" \
+            --path-to-changelog="CHANGELOG.md" \
+            --compare-url-target-revision="HEAD" \
+            --heading-text="" \
+            --github-actions-output \
+            --write \
+            --no-interaction
 
       - name: Commit updated CHANGELOG
         uses: stefanzweifel/git-auto-commit-action@d0b01107b5db882071f96de5dd4b54961ea93f4c # v7.2.1
