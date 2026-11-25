@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - '**.php'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -19,8 +20,22 @@ jobs:
         with:
           ref: ${{ github.head_ref }}
 
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.5'
+          coverage: none
+
+      # Pint comes from the project's require-dev, so it is subject to the
+      # Composer cooldown policy. Plugins and scripts are skipped because this
+      # job holds a token that can push.
+      - name: Install composer dependencies
+        uses: ramsey/composer-install@26d8a556604053a9612623447203a691f406fbe6 # v4
+        with:
+          composer-options: --no-plugins --no-scripts
+
       - name: Fix PHP code style issues
-        uses: aglipanci/laravel-pint-action@36de00d5f5a8a4e12d443e01671daa12a18f4c79 # 2.6
+        run: vendor/bin/pint
 
       - name: Commit changes
         uses: stefanzweifel/git-auto-commit-action@d0b01107b5db882071f96de5dd4b54961ea93f4c # v7.2.1
