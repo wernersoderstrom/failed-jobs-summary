@@ -1,33 +1,66 @@
 name: dependabot-auto-merge
-on: pull_request_target
 
-permissions:
-  pull-requests: write
-  contents: write
+# Merges Dependabot minor/patch updates only after CI has passed on the exact
+# commit being merged. Runs in the default-branch context and never checks out
+# or executes PR code.
+on:
+  workflow_run:
+    workflows: [run-tests, PHPStan]
+    types: [completed]
+
+permissions: {}
 
 jobs:
   dependabot:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'wernersoderstrom/failed-jobs-summary' }}
+    if: >-
+      github.repository == 'wernersoderstrom/failed-jobs-summary' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/')
+    permissions:
+      actions: read
+      checks: read
+      contents: write
+      pull-requests: write
     steps:
-
-      - name: Dependabot metadata
-        id: metadata
-        uses: dependabot/fetch-metadata@v3.1.0
-        with:
-          github-token: "${{ secrets.GITHUB_TOKEN }}"
-
-      - name: Auto-merge Dependabot PRs for semver-minor updates
-        if: ${{steps.metadata.outputs.update-type == 'version-update:semver-minor'}}
-        run: gh pr merge --auto --merge "$PR_URL"
+      - name: Merge once all checks pass
         env:
-          PR_URL: ${{github.event.pull_request.html_url}}
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          TESTS_WORKFLOW: run-tests.yml
+        run: |
+          set -euo pipefail
 
-      - name: Auto-merge Dependabot PRs for semver-patch updates
-        if: ${{steps.metadata.outputs.update-type == 'version-update:semver-patch'}}
-        run: gh pr merge --auto --merge "$PR_URL"
-        env:
-          PR_URL: ${{github.event.pull_request.html_url}}
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          pr=$(gh api "repos/$GH_REPO/pulls?state=open&head=${GH_REPO%%/*}:$HEAD_BRANCH" \
+            --jq '.[] | select(.user.login == "dependabot[bot]") | select(.head.sha == env.HEAD_SHA) | .number')
+          if [ -z "$pr" ]; then echo "No open Dependabot PR at $HEAD_SHA"; exit 0; fi
+
+          # Every commit must be a verified Dependabot commit.
+          bad_commits=$(gh api "repos/$GH_REPO/pulls/$pr/commits" --paginate \
+            --jq '[.[] | select(.author.login != "dependabot[bot]" or .commit.verification.verified != true)] | length')
+          if [ "$bad_commits" != "0" ]; then echo "PR #$pr has non-Dependabot commits, not merging"; exit 0; fi
+
+          # Every dependency in the PR must be a minor or patch update.
+          types=$(gh api "repos/$GH_REPO/pulls/$pr/commits" --paginate --jq '.[].commit.message' \
+            | sed -n 's/^ *update-type: *//p' | sort -u)
+          if [ -z "$types" ] || echo "$types" | grep -qvE '^version-update:semver-(minor|patch)$'; then
+            echo "PR #$pr update types: ${types:-none}; not auto-merging"; exit 0
+          fi
+
+          # The test workflow must have succeeded on this commit...
+          tests=$(gh run list --workflow "$TESTS_WORKFLOW" --commit "$HEAD_SHA" --event pull_request \
+            --json conclusion --jq '[.[] | select(.conclusion == "success")] | length')
+          if [ "$tests" = "0" ]; then echo "Tests have not passed on $HEAD_SHA yet"; exit 0; fi
+
+          # ...and every other check on it must be finished and green.
+          pending=$(gh api "repos/$GH_REPO/commits/$HEAD_SHA/check-runs" --paginate \
+            --jq '[.check_runs[] | select(.status != "completed" or ((.conclusion // "") | IN("success","skipped","neutral") | not))] | length')
+          if [ "$pending" != "0" ]; then echo "$pending checks pending or failing on $HEAD_SHA"; exit 0; fi
+
+          gh pr merge "$pr" --merge --match-head-commit "$HEAD_SHA" \
+            || [ "$(gh pr view "$pr" --json state --jq .state)" = "MERGED" ]
