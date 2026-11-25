@@ -10,6 +10,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: dependabot-auto-merge-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
 jobs:
   dependabot:
     runs-on: ubuntu-latest
@@ -36,7 +40,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          pr=$(gh api "repos/$GH_REPO/pulls?state=open&head=${GH_REPO%%/*}:$HEAD_BRANCH" \
+          pr=$(gh api -X GET "repos/$GH_REPO/pulls" -f state=open -f head="${GH_REPO%%/*}:$HEAD_BRANCH" \
             --jq '.[] | select(.user.login == "dependabot[bot]") | select(.head.sha == env.HEAD_SHA) | .number')
           if [ -z "$pr" ]; then echo "No open Dependabot PR at $HEAD_SHA"; exit 0; fi
 

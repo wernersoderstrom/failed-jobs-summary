@@ -2,23 +2,30 @@ name: Fix PHP code style issues
 
 on:
   push:
+    # Setting only branches-ignore also stops tag pushes from triggering this.
+    branches-ignore:
+      - 'dependabot/**'
     paths:
       - '**.php'
   workflow_dispatch:
 
-permissions:
-  contents: write
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   php-code-styling:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: write
 
     steps:
+      # Credentials are kept on disk: the commit step needs them to push.
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.head_ref }}
 
       - name: Setup PHP
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
@@ -41,3 +48,4 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@d0b01107b5db882071f96de5dd4b54961ea93f4c # v7.2.1
         with:
           commit_message: Fix styling
+          file_pattern: '*.php'
